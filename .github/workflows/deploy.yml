@@ -1,0 +1,43 @@
+name: Deploy GKE Infrastructure
+on:
+ push:
+  branches: [ "main" ]
+jobs:
+ terraform-deploy:
+  name: Terraform Apply
+  runs-on: ubuntu-latest
+  env:
+   GOOGLE_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+   GOOGLE_PROJECT: ${{ secrets.GCP_PROJECT }}
+   GOOGLE_REGION: "us-central1"
+   CLUSTER_NAME: "ci-gke-cluster"
+  steps:
+  - name: Checkout code
+    uses: actions/checkout@v3
+  - name: Setup Terraform
+    uses: hashicorp/setup-terraform@v3
+    with:
+     terraform_version: 1.5.0
+  - name: Authenticate with GCP
+    run: |
+     echo "$GOOGLE_CREDENTIALS" > gcp-key.json
+     gcloud auth activate-service-account --key-file=gcp-key.json
+     gcloud config set project $GOOGLE_PROJECT
+     gcloud config set compute/region $GOOGLE_REGION
+  - name: Init Terraform
+    working-directory: terraform
+    run: terraform init
+  - name: Plan Terraform
+    working-directory: terraform
+    run: terraform plan -out=tfplan
+  - name: Apply Terraform
+    working-directory: terraform
+    run: terraform apply -auto-approve tfplan
+  - name: Configure kubectl
+    run: |
+     gcloud container clusters get-credentials $CLUSTER_NAME --region $GOOGLE_REGION --project $GOOGLE_PROJECT
+  - name: Deploy Jenkins, Prometheus, and Grafana
+    run: |
+     kubectl apply -f k8s/jenkins.yaml
+     kubectl apply -f k8s/prometheus.yaml
+     kubectl apply -f k8s/grafana.yaml
